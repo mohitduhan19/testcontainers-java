@@ -1049,6 +1049,30 @@ public class GenericContainer<SELF extends GenericContainer<SELF>>
     }
 
     /**
+     * Expose a container port using a specific protocol, so that a randomly chosen host port will be bound to it
+     * when the container starts. Use {@link ContainerState#getMappedPort(int, InternetProtocol)} to retrieve the
+     * bound host port once the container is running.
+     *
+     * @param port the container port to expose
+     * @param protocol the protocol (TCP or UDP) that the port should be exposed with
+     */
+    public void addExposedPort(int port, InternetProtocol protocol) {
+        this.containerDef.addExposedPort(port, com.github.dockerjava.api.model.InternetProtocol.parse(protocol.name()));
+    }
+
+    /**
+     * Fluent variant of {@link #addExposedPort(int, InternetProtocol)}.
+     *
+     * @param port the container port to expose
+     * @param protocol the protocol (TCP or UDP) that the port should be exposed with
+     * @return this
+     */
+    public SELF withExposedPort(int port, InternetProtocol protocol) {
+        addExposedPort(port, protocol);
+        return self();
+    }
+
+    /**
      * {@inheritDoc}
      */
     @Override
