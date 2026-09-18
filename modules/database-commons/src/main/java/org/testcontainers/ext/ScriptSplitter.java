@@ -20,6 +20,20 @@ class ScriptSplitter {
     private final StringBuilder sb = new StringBuilder();
 
     /**
+     * Tracks the last significant (non-whitespace, non-comment) lexem that was appended,
+     * so that whitespace-shrinking can tell whether it is sitting between two adjacent
+     * quoted string literals.
+     */
+    private Lexem lastSignificantLexem;
+
+    /**
+     * True if the whitespace run currently being shrunk contains a newline. Some databases
+     * (e.g. PostgreSQL) only treat two adjacent string literals as implicitly concatenated
+     * when they are separated by a newline, so that distinction has to survive shrinking.
+     */
+    private boolean pendingWhitespaceHasNewline;
+
+    /**
      * Standard parsing:
      * 1. Remove comments
      * 2. Shrink whitespace and eols
@@ -31,11 +45,15 @@ class ScriptSplitter {
             switch (l) {
                 case SEPARATOR:
                     flushStringBuilder();
+                    resetAdjacencyTracking();
                     break;
                 case COMMENT:
                     //skip
                     break;
                 case WHITESPACE:
+                    if (scanner.getCurrentMatch().indexOf('\n') >= 0) {
+                        pendingWhitespaceHasNewline = true;
+                    }
                     if (sb.length() == 0 || sb.charAt(sb.length() - 1) != ' ') {
                         sb.append(' ');
                     }
@@ -45,13 +63,40 @@ class ScriptSplitter {
                     if ("begin".equalsIgnoreCase(scanner.getCurrentMatch())) {
                         compoundStatement(false);
                         flushStringBuilder();
+                        resetAdjacencyTracking();
+                        break;
                     }
+                    lastSignificantLexem = l;
+                    pendingWhitespaceHasNewline = false;
+                    break;
+                case QUOTED_STRING:
+                    if (
+                        lastSignificantLexem == Lexem.QUOTED_STRING &&
+                        pendingWhitespaceHasNewline &&
+                        sb.length() > 0 &&
+                        sb.charAt(sb.length() - 1) == ' '
+                    ) {
+                        // Two adjacent string literals with only shrunk whitespace between them would
+                        // no longer be valid syntax for some databases; restore the newline that makes
+                        // them concatenate rather than collide (see #11206).
+                        sb.setCharAt(sb.length() - 1, '\n');
+                    }
+                    appendMatch();
+                    lastSignificantLexem = l;
+                    pendingWhitespaceHasNewline = false;
                     break;
                 default:
                     appendMatch();
+                    lastSignificantLexem = l;
+                    pendingWhitespaceHasNewline = false;
             }
         }
         flushStringBuilder();
+    }
+
+    private void resetAdjacencyTracking() {
+        lastSignificantLexem = null;
+        pendingWhitespaceHasNewline = false;
     }
 
     /**
