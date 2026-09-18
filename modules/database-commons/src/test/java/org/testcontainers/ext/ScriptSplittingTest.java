@@ -13,6 +13,39 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ScriptSplittingTest {
 
     @Test
+    void testAdjacentStringLiteralsSeparatedByNewlineStayConcatenatable() {
+        // see #11206: adjacent string literals need at least a newline between them to remain
+        // valid, concatenatable syntax (e.g. in PostgreSQL) - collapsing that newline into a
+        // plain space produces invalid SQL.
+        String script =
+            "CREATE TABLE test (\n" +
+            "    x int\n" +
+            ");\n" +
+            "\n" +
+            "COMMENT ON COLUMN test.x\n" +
+            "IS 'First sentence. '\n" +
+            "'Second sentence';";
+
+        List<String> expected = Arrays.asList(
+            "CREATE TABLE test ( x int )",
+            "COMMENT ON COLUMN test.x IS 'First sentence. '\n'Second sentence'"
+        );
+
+        splitAndCompare(script, expected);
+    }
+
+    @Test
+    void testAdjacentStringLiteralsSeparatedByPlainSpaceAreLeftAsIs() {
+        // A single space (no newline) between adjacent literals was never valid concatenation
+        // syntax, so shrinking that whitespace should keep behaving exactly as before.
+        String script = "SELECT 'First sentence. ' 'Second sentence';";
+
+        List<String> expected = Arrays.asList("SELECT 'First sentence. ' 'Second sentence'");
+
+        splitAndCompare(script, expected);
+    }
+
+    @Test
     void testStringDemarcation() {
         String script = "SELECT 'foo `bar`'; SELECT 'foo -- `bar`'; SELECT 'foo /* `bar`';";
 
