@@ -234,7 +234,12 @@ class MountableFileTest {
 
     private void withJarOnClasspath(final Path jarFile, final ThrowingRunnable runnable) throws Exception {
         final ClassLoader previousContextClassLoader = Thread.currentThread().getContextClassLoader();
-        try (URLClassLoader jarClassLoader = new URLClassLoader(new URL[] { jarFile.toUri().toURL() }, previousContextClassLoader)) {
+        try (
+            URLClassLoader jarClassLoader = new URLClassLoader(
+                new URL[] { jarFile.toUri().toURL() },
+                previousContextClassLoader
+            )
+        ) {
             Thread.currentThread().setContextClassLoader(jarClassLoader);
             try {
                 runnable.run();
