@@ -1,0 +1,58 @@
+name: MountableFile test check
+
+on:
+  push:
+    branches:
+      - ci-mountablefile-check
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.variant }} (java ${{ matrix.java }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: with-guard
+            java: '17'
+            break_guard: 'false'
+          - variant: with-guard
+            java: '21'
+            break_guard: 'false'
+          # The extraction guard is disabled here, so this run is EXPECTED TO FAIL.
+          - variant: expected-failure-guard-removed
+            java: '17'
+            break_guard: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - name: Remove the extraction guard
+        if: matrix.break_guard == 'true'
+        run: |
+          perl -pi -e 's/if \(!newFile\.getCanonicalFile\(\)\.toPath\(\)\.startsWith\(rootPath\)\) \{/if (false) {/' core/src/main/java/org/testcontainers/utility/MountableFile.java
+          git diff --exit-code && { echo "patch did not apply"; exit 1; } || true
+          git diff
+
+      - name: Spotless check
+        if: matrix.break_guard == 'false'
+        run: ./gradlew :testcontainers:spotlessCheck --no-daemon
+
+      - name: MountableFileTest
+        run: ./gradlew :testcontainers:test --tests 'org.testcontainers.utility.MountableFileTest' --no-daemon -i
+
+      - name: Test report
+        if: always()
+        run: |
+          for f in core/build/test-results/test/*.xml; do
+            grep -o '<testcase name="[^"]*"' "$f" | sed 's/<testcase name=//'
+            grep -A3 '<failure' "$f" | head -20 || true
+          done
